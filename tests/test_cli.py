@@ -144,4 +144,7 @@ def test_render_text_with_no_findings() -> None:
 def test_help() -> None:
     result = runner.invoke(app, ["analyze", "--help"])
     assert result.exit_code == 0
-    assert "--no-defang" in result.stdout
+    # Help is rendered by rich, which turns color on in CI (GitHub Actions) and splits
+    # "--no-defang" into separately colored pieces. Strip the color codes first.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+    assert "--no-defang" in plain
