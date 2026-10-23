@@ -17,12 +17,12 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full clone, not just the latest commit, so the history scan sees every commit.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -34,7 +34,7 @@ jobs:
 
       # Hook environments (ruff, gitleaks + its Go toolchain) are slow to build, so cache them.
       # The key changes whenever .pre-commit-config.yaml does, which forces a rebuild.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -46,7 +46,7 @@ jobs:
       # The commit-time gitleaks hook only scans staged changes, which is nothing in CI.
       # This one scans the whole git history with the same pinned gitleaks.
       - name: Secret scan (full git history)
-        run: pre-commit run gitleaks-history --hook-stage manual --all-files
+        run: pre-commit run gitleaks-history --hook-stage manual --all-files --verbose
 
       - name: Tests
         run: pytest
