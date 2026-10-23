@@ -9,15 +9,20 @@ organization "co.uk".
 Auth checks. Only the topmost Authentication-Results header is read. Each server adds
 its headers above the existing ones, so the topmost was added by the receiving server.
 Everything below came from earlier in the path, which an attacker can write.
+
+Received chain. Each server adds a Received header on top, so reading bottom-up gives
+the path. Only the hops our own servers added are real; the origin is where an outside
+server handed the email in, since our server saw that connection's IP itself.
 """
 
 import ipaddress
 import re
 from collections.abc import Sequence
+from datetime import datetime
 from email import policy
 from email.errors import HeaderParseError
 from email.headerregistry import Address
-from email.utils import parseaddr
+from email.utils import parseaddr, parsedate_to_datetime
 
 from publicsuffixlist import PublicSuffixList
 
@@ -26,7 +31,9 @@ from phish_triage.models import (
     AuthResult,
     Brand,
     Finding,
+    Hop,
     ParsedEmail,
+    ReceivedChain,
     Severity,
 )
 
@@ -385,3 +392,191 @@ def _split_unquoted(text: str, separator: str | None) -> list[str]:
     parts.append("".join(current))
     parts = [part.strip() for part in parts]
     return [part for part in parts if part] if separator is None else parts
+
+
+# --- Received chain: the path the email took, and where it came in from outside ---
+
+# Ranges that never belong to an outside sender. An explicit list instead of ipaddress's
+# is_private / is_global: those count the documentation ranges (192.0.2.0/24 and friends)
+# as private, and carrier-grade NAT (100.64.0.0/10) as not private.
+_INTERNAL_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "10.0.0.0/8",  # RFC 1918 private
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",  # loopback
+        "::1/128",
+        "169.254.0.0/16",  # link-local
+        "fe80::/10",
+        "100.64.0.0/10",  # carrier-grade NAT
+        "fc00::/7",  # IPv6 unique local
+    )
+)
+
+# Clause keywords. The lookbehind stops "envelope-from" or "mail.from.example" matching.
+_RECEIVED_KEYWORD = re.compile(r"(?<![\w.-])(from|by|via|with|id|for)\s", re.IGNORECASE)
+_BRACKETED_IP = re.compile(r"\[(?:IPv6:)?([0-9A-Fa-f:.]+)\]", re.IGNORECASE)
+_RDNS_BEFORE_IP = re.compile(r"([\w.-]+)\s+\[(?:IPv6:)?[0-9A-Fa-f:.]+\]", re.IGNORECASE)
+
+
+def analyze_received(parsed: ParsedEmail) -> ReceivedChain:
+    """Every hop in travel order, plus the hop where an outside server handed the email in."""
+    top_first = [parse_received(value) for value in parsed.get_headers("Received")]
+    # Walk down from our side; the first external handoff is the origin. Everything below
+    # it was written by the sender's side and can be invented.
+    origin = next((hop for hop in top_first if _is_external_handoff(hop)), None)
+    return ReceivedChain(hops=tuple(reversed(top_first)), origin=origin)
+
+
+def check_received(parsed: ParsedEmail) -> list[Finding]:
+    chain = analyze_received(parsed)
+    if not chain.hops:
+        return [
+            Finding(
+                id="RECEIVED_MISSING",
+                severity=Severity.LOW,
+                description="No Received headers; the email's path can't be traced.",
+            )
+        ]
+    if chain.origin is None:
+        return [
+            Finding(
+                id="RECEIVED_ORIGIN_UNKNOWN",
+                severity=Severity.LOW,
+                description="No hop shows an outside server handing this email in.",
+                evidence=f"{len(chain.hops)} hops, all internal or unreadable",
+            )
+        ]
+    origin = chain.origin
+    if origin.rdns_verified:
+        name = origin.from_rdns
+    else:
+        claimed = origin.from_rdns or origin.from_helo
+        name = f"unverified name {claimed}" if claimed else "no name"
+    return [
+        Finding(
+            id="RECEIVED_ORIGIN",
+            severity=Severity.INFO,
+            description="The IP that handed this email to the receiving organization.",
+            evidence=f"{origin.from_ip} ({name}) -> {origin.by_host or 'unknown server'}",
+        )
+    ]
+
+
+def parse_received(value: str) -> Hop:
+    """Parse one Received header. Formats vary by mail server, so every field is optional.
+
+    from helo (rdns [ip]) by host with protocol id x for <rcpt>; date
+    """
+    clauses, separator, date_text = value.rpartition(";")
+    if not separator:
+        clauses, date_text = value, ""
+    sections = _received_sections(clauses)
+    from_text = sections.get("from", "")
+    rdns = _rdns(from_text)
+    return Hop(
+        raw=value,
+        from_helo=_first_word(from_text),
+        from_rdns=rdns,
+        rdns_verified=rdns is not None and "may be forged" not in from_text.lower(),
+        from_ip=_connection_ip(from_text),
+        by_host=_first_word(sections.get("by", "")),
+        protocol=_first_word(sections.get("with", "")),
+        timestamp=_parse_date(date_text),
+    )
+
+
+def _is_external_handoff(hop: Hop) -> bool:
+    if hop.from_ip is None:
+        return False  # nothing to attribute: local delivery, webmail, or unreadable
+    ip = ipaddress.ip_address(hop.from_ip)
+    if any(ip in network for network in _INTERNAL_NETWORKS):
+        return False
+    # Same organization on both ends means relaying inside one org. Only a verified
+    # reverse-DNS name counts, never the HELO, which the sender types. Even rDNS isn't
+    # proof: whoever owns an IP sets its PTR record, so an attacker can point their own
+    # IP at our domain. Receiving servers that check the name resolves back to the same
+    # IP mark a failure as "may be forged" or "unknown", and we fall back to the IP alone.
+    # Limitation: a server that skips that check, or doesn't mark a failure, leaves a
+    # forged PTR looking verified here, and this code can't tell the difference.
+    if hop.rdns_verified and hop.from_rdns and hop.by_host:
+        return org_domain(hop.from_rdns) != org_domain(hop.by_host)
+    return True
+
+
+def _received_sections(text: str) -> dict[str, str]:
+    """Split into from / by / with / ... sections. Keywords inside (comments) don't count."""
+    outside, _ = _split_comments(text)
+    matches = list(_RECEIVED_KEYWORD.finditer(outside))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        # each section runs until the next keyword, or to the end of the text
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections.setdefault(match.group(1).lower(), text[match.end() : end].strip())
+    return sections
+
+
+def _connection_ip(from_text: str) -> str | None:
+    """The IP the receiving server saw, not one the sender claimed.
+
+    Servers record the real connection inside the comment: "helo (rdns [ip])". A
+    bracketed IP before it is usually the HELO the sender typed ("from [1.2.3.4] ..."),
+    except in Exim, which writes the real IP there. So outside is the last resort.
+    """
+    outside, inside = _split_comments(from_text)
+    for match in _BRACKETED_IP.finditer(inside):
+        if ip := _valid_ip(match.group(1)):
+            return ip
+    for token in re.split(r"[\s()\[\],=]+", inside):  # Exchange: "host (2603:10b6::1)"
+        if ip := _valid_ip(token):
+            return ip
+    for match in _BRACKETED_IP.finditer(outside):
+        if ip := _valid_ip(match.group(1)):
+            return ip
+    return None
+
+
+def _rdns(from_text: str) -> str | None:
+    """The reverse-DNS name right before the IP in the comment. None if 'unknown' or absent."""
+    _, inside = _split_comments(from_text)
+    match = _RDNS_BEFORE_IP.search(inside)
+    if match is None:
+        return None
+    name = match.group(1).rstrip(".").lower()  # Gmail writes "mail.example.com."
+    return None if name in {"", "unknown"} else name
+
+
+def _split_comments(text: str) -> tuple[str, str]:
+    """Two same-length copies of text: (comments) blanked out, and only the comments kept."""
+    outside: list[str] = []
+    inside: list[str] = []
+    depth = 0
+    for char in text:
+        if char == "(":
+            depth += 1
+        outside.append(" " if depth else char)
+        inside.append(char if depth else " ")
+        if char == ")" and depth:
+            depth -= 1
+    return "".join(outside), "".join(inside)
+
+
+def _first_word(section: str) -> str | None:
+    outside, _ = _split_comments(section)
+    words = outside.split()
+    return words[0] if words else None
+
+
+def _valid_ip(text: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return None
+
+
+def _parse_date(text: str) -> datetime | None:
+    try:
+        return parsedate_to_datetime(text.strip())
+    except (TypeError, ValueError):
+        return None

@@ -1,0 +1,14 @@
+Received: from mx.example.org (mx.example.org [10.0.0.5])
+	by store.example.org with LMTP id a1; Fri, 23 Oct 2026 09:15:04 +0000
+Received: from out.example.net (out.example.net [198.51.100.25])
+	by mx.example.org with ESMTPS id b2 for <analyst@example.org>; Fri, 23 Oct 2026 09:15:03 +0000
+Received: from [192.168.1.20] (unknown [192.168.1.20])
+	by out.example.net with ESMTPSA id c3; Fri, 23 Oct 2026 09:15:02 +0000
+Received: by webmail.example.net with HTTP; Fri, 23 Oct 2026 09:15:01 +0000
+From: "Example News" <news@example.net>
+To: analyst@example.org
+Subject: received_chain
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

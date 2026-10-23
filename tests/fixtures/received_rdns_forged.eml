@@ -1,0 +1,9 @@
+Received: from mail.example.org (mail.example.org [203.0.113.98] (may be forged))
+	by mx.example.org with ESMTP id g7; Fri, 23 Oct 2026 09:30:01 +0000
+From: "Example News" <news@example.net>
+To: analyst@example.org
+Subject: received_rdns_forged
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

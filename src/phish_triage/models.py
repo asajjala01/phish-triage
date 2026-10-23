@@ -1,6 +1,7 @@
 """Data structures shared by every stage: parsing, checks, scoring and reports."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 
 
@@ -56,6 +57,28 @@ class AuthenticationResults:
 
     authserv_id: str  # the server that vouches for these results; "" if the header omits it
     results: tuple[AuthResult, ...]
+
+
+@dataclass(frozen=True)
+class Hop:
+    """One Received header: a server handing the email on to the next one."""
+
+    raw: str  # the full header value, kept even when nothing else could be parsed
+    from_helo: str | None = None  # the name the connecting server claimed; attacker-chosen
+    from_rdns: str | None = None  # reverse-DNS name the receiving server looked up
+    rdns_verified: bool = False  # False if marked "may be forged", or there was no name
+    from_ip: str | None = None  # the connecting IP the receiving server saw
+    by_host: str | None = None  # the server that received it and added this header
+    protocol: str | None = None  # ESMTP, ESMTPS, LMTP, HTTP, ...
+    timestamp: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ReceivedChain:
+    """The path an email took, and where it entered from outside."""
+
+    hops: tuple[Hop, ...]  # oldest first: the order the email actually travelled
+    origin: Hop | None  # the hop where an outside server handed it in; None if not found
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,11 @@
+Received: from out.example.net (out.example.net [198.51.100.25])
+	by mx.example.org with ESMTP id d4; Fri, 23 Oct 2026 09:20:02 +0000
+Received: from mail.paypal.com (mail.paypal.com [203.0.113.77])
+	by out.example.net with ESMTP id e5; Fri, 23 Oct 2026 09:20:01 +0000
+From: "Example News" <news@example.net>
+To: analyst@example.org
+Subject: received_forged_bottom
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.
