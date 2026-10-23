@@ -1,0 +1,41 @@
+# Brands phishers put in the From display name, e.g. "PayPal" <random@gmail.com>.
+#
+# name / aliases: matched case-insensitively as whole words in the display name.
+# domains: where the brand really sends from. Subdomains count automatically
+#   (email.microsoft.com matches microsoft.com), so list each organization once.
+#
+# Starter list. The domain lists are deliberately short and will miss some legitimate
+# sending domains. Phase 6 validation on real mail is where these get tuned.
+# Never list a free-mail domain (gmail.com, outlook.com) under a brand: anyone can
+# register an address there, so it would whitelist the exact attack this catches.
+
+brands:
+  - name: PayPal
+    domains: [paypal.com]
+
+  - name: Microsoft
+    aliases: [Microsoft 365, Office 365, OneDrive, SharePoint]
+    domains: [microsoft.com]
+
+  - name: Apple
+    aliases: [Apple ID, iCloud]
+    domains: [apple.com]
+
+  - name: Amazon
+    domains: [amazon.com]
+
+  - name: Google
+    domains: [google.com]
+
+  - name: DocuSign
+    domains: [docusign.com, docusign.net]
+
+  - name: DHL
+    domains: [dhl.com]
+
+  - name: Netflix
+    domains: [netflix.com]
+
+  # Add your own bank here, e.g.:
+  # - name: Example Bank
+  #   domains: [examplebank.com]

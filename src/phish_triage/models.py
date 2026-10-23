@@ -36,6 +36,15 @@ class Attachment:
         return len(self.data)
 
 
+@dataclass(frozen=True)
+class Brand:
+    """A brand phishers impersonate, and the domains it really sends from (config/brands.yaml)."""
+
+    name: str
+    domains: tuple[str, ...]
+    aliases: tuple[str, ...] = ()  # other names for it, e.g. "Office 365" for Microsoft
+
+
 @dataclass
 class ParsedEmail:
     """Everything later checks need from one .eml file."""

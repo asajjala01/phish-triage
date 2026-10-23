@@ -1,0 +1,8 @@
+Return-Path: <alerts@example.net>
+From: "billing@example.com" <alerts@example.net>
+To: analyst@example.org
+Subject: display_name_address
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

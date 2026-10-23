@@ -7,6 +7,8 @@ the Public Suffix List so that example.co.uk isn't mistaken for the organization
 """
 
 import ipaddress
+import re
+from collections.abc import Sequence
 from email import policy
 from email.errors import HeaderParseError
 from email.headerregistry import Address
@@ -14,10 +16,13 @@ from email.utils import parseaddr
 
 from publicsuffixlist import PublicSuffixList
 
-from phish_triage.models import Finding, ParsedEmail, Severity
+from phish_triage.models import Brand, Finding, ParsedEmail, Severity
 
 # Loads the list bundled inside the package. No network access, ever.
 _PSL = PublicSuffixList()
+
+# An email address written inside a display name: "security@paypal.com" <x@example.net>
+_ADDRESS_IN_TEXT = re.compile(r"[\w.+-]+@((?:[\w-]+\.)+[\w-]+)")
 
 
 def org_domain(domain: str) -> str:
@@ -29,8 +34,8 @@ def org_domain(domain: str) -> str:
     return _PSL.privatesuffix(domain) or domain
 
 
-def check_sender(parsed: ParsedEmail) -> list[Finding]:
-    """Compare From against Reply-To and Return-Path."""
+def check_sender(parsed: ParsedEmail, brands: Sequence[Brand]) -> list[Finding]:
+    """Compare From against Reply-To and Return-Path, and its display name against its domain."""
     findings: list[Finding] = []
     from_headers = parsed.get_headers("From")
     from_addresses = _addresses(parsed, "From")
@@ -90,7 +95,55 @@ def check_sender(parsed: ParsedEmail) -> list[Finding]:
             )
         )
 
+    findings.extend(_check_display_name(sender, sender_org, brands))
     return findings
+
+
+def _check_display_name(sender: Address, sender_org: str, brands: Sequence[Brand]) -> list[Finding]:
+    """Most mail clients show only the display name, so attackers put a trusted name there."""
+    findings: list[Finding] = []
+    name = sender.display_name
+    shown = f'"{name}" <{sender.addr_spec}>'
+
+    foreign = [
+        match.group(0)
+        for match in _ADDRESS_IN_TEXT.finditer(name)
+        if org_domain(match.group(1)) != sender_org
+    ]
+    if foreign:
+        findings.append(
+            Finding(
+                id="SENDER_DISPLAY_NAME_ADDRESS",
+                severity=Severity.HIGH,
+                description="The display name shows an email address from a different domain.",
+                evidence=shown,
+            )
+        )
+
+    for brand in brands:
+        if not _names_brand(name, brand):
+            continue
+        if sender_org in {org_domain(domain) for domain in brand.domains}:
+            continue  # the brand really sent it
+        findings.append(
+            Finding(
+                id="SENDER_DISPLAY_NAME_BRAND",
+                severity=Severity.HIGH,
+                description=f"The display name claims to be {brand.name}, "
+                f"but the address isn't one of {brand.name}'s domains.",
+                evidence=shown,
+            )
+        )
+    return findings
+
+
+def _names_brand(display_name: str, brand: Brand) -> bool:
+    """Whole-word, case-insensitive: "Apple ID" matches Apple, "Applebee's" doesn't."""
+    for term in (brand.name, *brand.aliases):
+        # (?<!\w) and (?!\w) instead of \b, so names ending in a symbol still work.
+        if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", display_name, re.IGNORECASE):
+            return True
+    return False
 
 
 def _addresses(parsed: ParsedEmail, name: str) -> list[Address]:
