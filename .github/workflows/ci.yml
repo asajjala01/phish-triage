@@ -18,6 +18,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full clone, not just the latest commit, so the history scan sees every commit.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -39,6 +42,11 @@ jobs:
       # Same hooks, same pinned versions as the local git hook.
       - name: Lint and secret scan (pre-commit)
         run: pre-commit run --all-files --show-diff-on-failure
+
+      # The commit-time gitleaks hook only scans staged changes, which is nothing in CI.
+      # This one scans the whole git history with the same pinned gitleaks.
+      - name: Secret scan (full git history)
+        run: pre-commit run gitleaks-history --hook-stage manual --all-files
 
       - name: Tests
         run: pytest
