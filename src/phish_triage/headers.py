@@ -448,20 +448,26 @@ def check_received(parsed: ParsedEmail) -> list[Finding]:
                 evidence=f"{len(chain.hops)} hops, all internal or unreadable",
             )
         ]
-    origin = chain.origin
-    if origin.rdns_verified:
-        name = origin.from_rdns
-    else:
-        claimed = origin.from_rdns or origin.from_helo
-        name = f"unverified name {claimed}" if claimed else "no name"
     return [
         Finding(
             id="RECEIVED_ORIGIN",
             severity=Severity.INFO,
             description="The IP that handed this email to the receiving organization.",
-            evidence=f"{origin.from_ip} ({name}) -> {origin.by_host or 'unknown server'}",
+            evidence=hop_source(chain.origin),
         )
     ]
+
+
+def hop_source(hop: Hop) -> str:
+    """'203.0.113.10 (out.example.com) -> mx.example.org', saying when a name is unverified."""
+    if hop.from_ip is None:
+        source = "(no connection info)"
+    elif hop.rdns_verified:
+        source = f"{hop.from_ip} ({hop.from_rdns})"
+    else:
+        claimed = hop.from_rdns or hop.from_helo
+        source = f"{hop.from_ip} ({f'unverified name {claimed}' if claimed else 'no name'})"
+    return f"{source} -> {hop.by_host or 'unknown server'}"
 
 
 def parse_received(value: str) -> Hop:
