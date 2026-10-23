@@ -37,6 +37,28 @@ class Attachment:
 
 
 @dataclass(frozen=True)
+class AuthResult:
+    """One method's verdict from an Authentication-Results header, e.g. spf=pass."""
+
+    method: str  # "spf", "dkim", "dmarc" (lowercased); unknown methods are kept too
+    result: str  # "pass", "fail", "softfail", "none", ... (lowercased)
+    # ("smtp.mailfrom", "example.com"), ("header.d", "example.com"), ("reason", "...")
+    properties: tuple[tuple[str, str], ...] = ()
+
+    def __str__(self) -> str:
+        pairs = " ".join(f"{key}={value}" for key, value in self.properties)
+        return f"{self.method}={self.result} {pairs}".strip()
+
+
+@dataclass(frozen=True)
+class AuthenticationResults:
+    """A parsed Authentication-Results header (RFC 8601)."""
+
+    authserv_id: str  # the server that vouches for these results; "" if the header omits it
+    results: tuple[AuthResult, ...]
+
+
+@dataclass(frozen=True)
 class Brand:
     """A brand phishers impersonate, and the domains it really sends from (config/brands.yaml)."""
 

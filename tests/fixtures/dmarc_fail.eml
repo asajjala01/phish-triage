@@ -1,0 +1,12 @@
+Authentication-Results: mx.example.org;
+	spf=pass smtp.mailfrom=bounce@example.net;
+	dkim=pass header.d=example.net;
+	dmarc=fail header.from=example.com
+Return-Path: <billing@example.com>
+From: "Example Billing" <billing@example.com>
+To: analyst@example.org
+Subject: dmarc_fail
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

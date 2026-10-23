@@ -1,9 +1,14 @@
-"""Sender checks: who the email claims to be from vs where replies and bounces really go.
+"""Header checks: who the email claims to be from, and what the receiving server verified.
 
-From and Reply-To are written by the sender and can say anything. Return-Path is added
-by the receiving server from the SMTP envelope (MAIL FROM), and it's the domain SPF
-checks. Domains are compared by organization (mail.example.com == example.com), using
-the Public Suffix List so that example.co.uk isn't mistaken for the organization "co.uk".
+Sender checks. From and Reply-To are written by the sender and can say anything.
+Return-Path is added by the receiving server from the SMTP envelope (MAIL FROM), and
+it's the domain SPF checks. Domains are compared by organization (mail.example.com ==
+example.com), using the Public Suffix List so that example.co.uk isn't mistaken for the
+organization "co.uk".
+
+Auth checks. Only the topmost Authentication-Results header is read. Each server adds
+its headers above the existing ones, so the topmost was added by the receiving server.
+Everything below came from earlier in the path, which an attacker can write.
 """
 
 import ipaddress
@@ -16,7 +21,14 @@ from email.utils import parseaddr
 
 from publicsuffixlist import PublicSuffixList
 
-from phish_triage.models import Brand, Finding, ParsedEmail, Severity
+from phish_triage.models import (
+    AuthenticationResults,
+    AuthResult,
+    Brand,
+    Finding,
+    ParsedEmail,
+    Severity,
+)
 
 # Loads the list bundled inside the package. No network access, ever.
 _PSL = PublicSuffixList()
@@ -176,3 +188,200 @@ def _is_ip_literal(domain: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+# --- auth checks: SPF / DKIM / DMARC from Authentication-Results ---
+
+_ERRORS = {"temperror", "permerror"}
+
+# (method, result) -> (finding id, severity, description). DKIM is handled separately.
+_AUTH_RULES = {
+    ("spf", "fail"): (
+        "AUTH_SPF_FAIL",
+        Severity.MEDIUM,
+        "SPF failed: the sending server isn't allowed to send for the envelope domain.",
+    ),
+    ("spf", "softfail"): (
+        "AUTH_SPF_SOFTFAIL",
+        Severity.LOW,
+        "SPF soft-failed: the envelope domain says this server probably isn't allowed.",
+    ),
+    ("dmarc", "fail"): (
+        "AUTH_DMARC_FAIL",
+        Severity.HIGH,
+        "DMARC failed: nothing authenticated the domain shown in From.",
+    ),
+    ("dmarc", "none"): (
+        "AUTH_DMARC_NONE",
+        Severity.LOW,
+        "The From domain publishes no DMARC policy, so it can be spoofed freely.",
+    ),
+}
+
+
+def check_auth(parsed: ParsedEmail) -> list[Finding]:
+    """Report SPF, DKIM and DMARC problems from the topmost Authentication-Results."""
+    values = parsed.get_headers("Authentication-Results")
+    if not values:
+        return [
+            Finding(
+                id="AUTH_RESULTS_MISSING",
+                severity=Severity.MEDIUM,
+                description="No Authentication-Results header; SPF/DKIM/DMARC can't be verified.",
+            )
+        ]
+    top = parse_authentication_results(values[0])
+    if top is None:
+        return [
+            Finding(
+                id="AUTH_RESULTS_UNPARSEABLE",
+                severity=Severity.LOW,
+                description="The topmost Authentication-Results header couldn't be parsed.",
+                evidence=values[0],
+            )
+        ]
+
+    server = top.authserv_id or "unknown server"
+    findings: list[Finding] = []
+    for result in top.results:
+        evidence = f"{server}: {result}"  # who vouched, and what they said
+        if result.method == "dkim":
+            continue  # judged across all signatures below
+        rule = _AUTH_RULES.get((result.method, result.result))
+        if rule is not None:
+            finding_id, severity, description = rule
+            findings.append(Finding(finding_id, severity, description, evidence))
+        elif result.method in {"spf", "dmarc"} and result.result in _ERRORS:
+            findings.append(_auth_error(result, evidence))
+
+    # Mail often carries several DKIM signatures, and a mailing service's can break
+    # while the sender's own still verifies. One passing signature is enough.
+    dkim = [result for result in top.results if result.method == "dkim"]
+    if dkim and not any(result.result == "pass" for result in dkim):
+        failed = [result for result in dkim if result.result == "fail"]
+        errored = [result for result in dkim if result.result in _ERRORS]
+        if failed:
+            findings.append(
+                Finding(
+                    id="AUTH_DKIM_FAIL",
+                    severity=Severity.MEDIUM,
+                    description="DKIM failed: the signature doesn't verify, so the message "
+                    "was altered or the signer is forged.",
+                    evidence="; ".join(f"{server}: {result}" for result in failed),
+                )
+            )
+        elif errored:
+            findings.append(_auth_error(errored[0], f"{server}: {errored[0]}"))
+    return findings
+
+
+def _auth_error(result: AuthResult, evidence: str) -> Finding:
+    return Finding(
+        id=f"AUTH_{result.method.upper()}_ERROR",
+        severity=Severity.LOW,
+        description=f"{result.method.upper()} couldn't be evaluated ({result.result}).",
+        evidence=evidence,
+    )
+
+
+def parse_authentication_results(value: str) -> AuthenticationResults | None:
+    """Parse one Authentication-Results header value; None if it's malformed.
+
+    Format (RFC 8601):  authserv-id; method=result ptype.property=value ...; method=...
+    Comments in (parentheses) and "quoted strings" may contain ; and = themselves,
+    which is why this can't just be value.split(";").
+    """
+    text = _strip_comments(value)
+    if text is None:
+        return None
+    # The RFC allows whitespace around "=" ("spf = pass"). Squash it so tokens hold together.
+    text = re.sub(r"\s*=\s*", "=", text)
+    segments = _split_unquoted(text, ";")
+    head = _split_unquoted(segments[0], None)  # "mx.example.org" or "mx.example.org 1"
+    if not head:
+        return None
+    if "=" in head[0]:
+        # No authserv-id: the header starts straight with "spf=...". The RFC requires one,
+        # but Microsoft 365 leaves it out, so treat every segment as a result.
+        authserv_id = ""
+        rest = [segment for segment in segments if segment.strip()]
+    else:
+        authserv_id = head[0]
+        rest = [segment for segment in segments[1:] if segment.strip()]
+    if [segment.strip().lower() for segment in rest] == ["none"]:
+        return AuthenticationResults(authserv_id, ())  # server checked nothing
+
+    results: list[AuthResult] = []
+    for segment in rest:
+        tokens = _split_unquoted(segment, None)
+        method, sep, result = tokens[0].partition("=")
+        if not sep or not method or not result:
+            return None
+        properties = tuple(
+            (key.lower(), val.strip('"'))
+            for key, _, val in (token.partition("=") for token in tokens[1:])
+        )
+        results.append(
+            AuthResult(
+                method=method.split("/")[0].lower(),  # "dkim/1" -> "dkim" (version suffix)
+                result=result.lower(),
+                properties=properties,
+            )
+        )
+    if not results:
+        return None
+    return AuthenticationResults(authserv_id, tuple(results))
+
+
+def _strip_comments(value: str) -> str | None:
+    """Replace (comments) with a space. They nest, and can hold ; = and quotes.
+
+    None if the parentheses or quotes are unbalanced.
+    """
+    out: list[str] = []
+    depth = 0
+    in_quotes = False
+    i = 0
+    while i < len(value):
+        char = value[i]
+        if char == "\\" and (in_quotes or depth):
+            if in_quotes:
+                out.append(value[i : i + 2])  # keep escaped characters inside quotes
+            i += 2  # inside a comment, an escaped ( or ) must not change the depth
+            continue
+        if depth:
+            depth += {"(": 1, ")": -1}.get(char, 0)
+        elif in_quotes:
+            out.append(char)
+            in_quotes = char != '"'
+        elif char == "(":
+            depth = 1
+            out.append(" ")
+        elif char == '"':
+            in_quotes = True
+            out.append(char)
+        else:
+            out.append(char)
+        i += 1
+    if depth or in_quotes:
+        return None
+    return "".join(out)
+
+
+def _split_unquoted(text: str, separator: str | None) -> list[str]:
+    """Split on a separator (or on whitespace if None), ignoring any inside "quotes"."""
+    parts: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+    for char in text:
+        if char == '"':
+            in_quotes = not in_quotes
+        is_separator = char.isspace() if separator is None else char == separator
+        if is_separator and not in_quotes:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    parts = [part.strip() for part in parts]
+    return [part for part in parts if part] if separator is None else parts

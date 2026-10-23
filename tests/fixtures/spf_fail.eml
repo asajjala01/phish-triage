@@ -1,0 +1,12 @@
+Authentication-Results: mx.example.org;
+	spf=fail smtp.mailfrom=billing@example.com;
+	dkim=pass header.d=example.com;
+	dmarc=pass header.from=example.com
+Return-Path: <billing@example.com>
+From: "Example Billing" <billing@example.com>
+To: analyst@example.org
+Subject: spf_fail
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.
