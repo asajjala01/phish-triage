@@ -1,0 +1,24 @@
+# secrets and real samples (CLAUDE.md safety rule 4)
+.env
+samples/
+
+# real emails saved anywhere by accident; crafted fixtures are the only exception
+*.eml
+!tests/fixtures/*.eml
+
+# python
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# tool caches and output
+.cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
