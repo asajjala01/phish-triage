@@ -1,0 +1,11 @@
+Received: from a.example.org (a.example.org [10.0.0.2])
+	by b.example.org with ESMTP id h8; Fri, 23 Oct 2026 09:35:02 +0000
+Received: from [192.168.1.5] (unknown [192.168.1.5])
+	by a.example.org with ESMTPSA id i9; Fri, 23 Oct 2026 09:35:01 +0000
+From: "Example News" <news@example.net>
+To: analyst@example.org
+Subject: received_internal_only
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

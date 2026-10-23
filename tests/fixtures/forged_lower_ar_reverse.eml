@@ -1,0 +1,18 @@
+Authentication-Results: mx.example.org;
+	spf=pass smtp.mailfrom=billing@example.com;
+	dkim=pass header.d=example.com;
+	dmarc=pass header.from=example.com
+Received: from relay.example.com (relay.example.com [203.0.113.10])
+	by mx.example.org with ESMTP id jkl012; Fri, 23 Oct 2026 09:25:01 +0000
+Authentication-Results: relay.example.com;
+	spf=fail smtp.mailfrom=billing@example.com;
+	dkim=fail header.d=example.com;
+	dmarc=fail header.from=example.com
+Return-Path: <billing@example.com>
+From: "Example Billing" <billing@example.com>
+To: analyst@example.org
+Subject: forged_lower_ar_reverse
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

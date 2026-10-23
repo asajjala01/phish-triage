@@ -1,0 +1,42 @@
+Return-Path: <billing@example.com>
+Received: from mail.example.org (mail.example.org [198.51.100.20])
+	by mx.example.org with ESMTPS id abc123
+	for <analyst@example.org>; Fri, 23 Oct 2026 09:15:02 +0000
+Authentication-Results: mx.example.org;
+	spf=pass smtp.mailfrom=example.com;
+	dkim=pass header.d=example.com;
+	dmarc=pass header.from=example.com
+Received: from out.example.com (out.example.com [203.0.113.10])
+	by mail.example.org with ESMTP id def456;
+	Fri, 23 Oct 2026 09:15:01 +0000
+From: "Example Billing" <billing@example.com>
+To: analyst@example.org
+Subject: Your October invoice
+Date: Fri, 23 Oct 2026 09:15:00 +0000
+Message-ID: <invoice-2026-10@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset="utf-8"
+
+Hi, your October invoice is attached.
+
+--alt-boundary
+Content-Type: text/html; charset="utf-8"
+
+<p>Hi, your October invoice is attached.</p>
+
+--alt-boundary--
+
+--mixed-boundary
+Content-Type: application/pdf; name="invoice.pdf"
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhIGhhcm1sZXNzIHRlc3QgZmlsZSwgbm90IGEgcmVhbCBQREYuCg==
+
+--mixed-boundary--

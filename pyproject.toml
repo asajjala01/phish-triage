@@ -17,7 +17,11 @@ dependencies = [
     "filetype",
     "requests",
     "pyyaml",
+    "publicsuffixlist",
 ]
+
+[project.scripts]
+phish-triage = "phish_triage.cli:app"
 
 [project.optional-dependencies]
 dev = [

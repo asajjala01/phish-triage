@@ -1,0 +1,7 @@
+From: "PayPal <<< security@@paypal..example.com
+To: analyst@example.org
+Subject: Mangled From header
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+The From header above has an unclosed quote and a broken address.

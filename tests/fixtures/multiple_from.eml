@@ -1,0 +1,9 @@
+Return-Path: <it@example.com>
+From: "IT Support" <it@example.com>
+From: "IT Support" <it-support@example.net>
+To: analyst@example.org
+Subject: multiple_from
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

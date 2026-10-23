@@ -1,0 +1,13 @@
+Authentication-Results: mx.example.org;
+	dkim=pass header.i=@example.com header.s=s1 header.b=AbC123;
+	spf=pass (mx.example.org: domain of billing@example.com designates 203.0.113.10
+	as permitted sender; checked (twice)) smtp.mailfrom=billing@example.com;
+	dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com
+Return-Path: <billing@example.com>
+From: "Example Billing" <billing@example.com>
+To: analyst@example.org
+Subject: auth_comments
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.
