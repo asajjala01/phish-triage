@@ -1,0 +1,9 @@
+Return-Path: <billing@example.com>
+From: "Example Billing" <billing@example.com>
+Reply-To: billing-dept@example.net
+To: analyst@example.org
+Subject: reply_to_mismatch
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Crafted test email.

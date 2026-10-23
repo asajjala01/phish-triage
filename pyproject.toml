@@ -17,6 +17,7 @@ dependencies = [
     "filetype",
     "requests",
     "pyyaml",
+    "publicsuffixlist",
 ]
 
 [project.optional-dependencies]
