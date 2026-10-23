@@ -1,0 +1,36 @@
+From: colleague@example.org
+To: analyst@example.org
+Subject: Fwd: is this legit?
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: text/plain; charset="utf-8"
+
+Got this one, see attached.
+
+--outer
+Content-Type: message/rfc822
+Content-Disposition: attachment; filename="original.eml"
+
+From: sender@example.net
+To: colleague@example.org
+Subject: inner message
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="inner"
+
+--inner
+Content-Type: text/html; charset="utf-8"
+
+<p>Inner body. The parser must not treat this as the outer email's body.</p>
+
+--inner
+Content-Type: text/plain; name="note.txt"
+Content-Disposition: attachment; filename="note.txt"
+Content-Transfer-Encoding: base64
+
+Rm9yd2FyZGVkIHRlc3QgYm9keS4gTm90aGluZyB0byBzZWUgaGVyZS4K
+
+--inner--
+
+--outer--

@@ -1,0 +1,12 @@
+From: sender@example.com
+To: analyst@example.org
+Subject: Broken boundary
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="declared-boundary"
+
+--a-different-boundary
+Content-Type: text/plain
+
+The declared boundary never appears, so the parser can't split this into parts.
+
+--a-different-boundary--
